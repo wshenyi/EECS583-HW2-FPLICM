@@ -1,0 +1,13 @@
+cmake-build-debug
+.idea
+.DS_Store
+.clion.source.upload.marker
+*.profdata
+*.log
+*_prof
+default.profraw
+*_output
+*_fplicm
+*.prof.bc
+*.fplicm.bc
+*.ls.bc
