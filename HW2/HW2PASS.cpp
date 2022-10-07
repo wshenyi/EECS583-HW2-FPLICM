@@ -36,6 +36,7 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <stack>
 /* *******Implementation Ends Here******* */
 
 using namespace llvm;
@@ -402,6 +403,7 @@ struct FPLICMPass : public LoopPass {
         for (auto &I : info.loads) errs() << *I << "\n";
         errs() << "=========================\n";
 
+        auto body = info.loads[0]->getParent();
         unsigned num = 0;
         for (auto load : info.loads) {
             auto *cur = dyn_cast<Instruction>(*load->user_begin());
@@ -437,13 +439,12 @@ struct FPLICMPass : public LoopPass {
             if (cur->getOpcode() == Instruction::Store) {
                 std::vector<Value*> temp_save;
                 for (auto *usr : cur->getOperand(1)->users()) {
-                    if (dyn_cast<Instruction>(usr)->getOpcode() == Instruction::Load){
-                        usr->replaceAllUsesWith(new_load);
-                        // dyn_cast<Instruction>(usr)->eraseFromParent();
-                        temp_save.push_back(usr);
+                    if (dyn_cast<Instruction>(usr)->getOpcode() == Instruction::Load 
+                        && dyn_cast<Instruction>(usr)->getParent() == dyn_cast<Instruction>(cur)->getParent()){
+                            usr->replaceAllUsesWith(new_load);
+                            temp_save.push_back(usr);
                     }
                 }
-
                 for (auto *i : temp_save) dyn_cast<Instruction>(i)->eraseFromParent();
                 cur->eraseFromParent();
                 dyn_cast<Instruction>(cur->getOperand(1))->eraseFromParent();
@@ -454,31 +455,96 @@ struct FPLICMPass : public LoopPass {
             num = ins_list.size();
         }
 
+        // Doing constant folding here
+        ConstantFolding(body, ins_list);
+
         Value *curr, *prev, *origin;
         for (auto store : info.stores) {
             origin = store->getOperand(0);
             prev = origin;
             for (auto I : ins_list) {
                 curr = I->clone();
+                auto Icurr = dyn_cast<Instruction>(curr);
                 if (I->getOpcode() == Instruction::Store){
-                    dyn_cast<Instruction>(curr)->setOperand(0, prev);
+                    Icurr->setOperand(0, prev);
                     prev = origin;
                 }else{
                     unsigned idx = 0;
                     // Assume instructions are continues. Maybe not correct!!!
                     for (auto p = I->op_begin(); p != I->op_end() ; p++ ) {
                         if (*p == I->getPrevNode()){
-                            dyn_cast<Instruction>(curr)->setOperand(idx, prev);
+                            Icurr->setOperand(idx, prev);
                         }
                         idx++;
                     }
                     prev = curr;
                 }
-                dyn_cast<Instruction>(curr)->insertBefore(store);
+                Icurr->insertBefore(store);
             }
             store->eraseFromParent();
         }
     }
+
+static void ConstantFolding(BasicBlock* cur_bb, std::vector<Instruction*> &ins_list) {
+    for (auto &I : *cur_bb) errs() << I << "\n";
+
+    std::vector<std::pair<Instruction*,Instruction*>> store_load;
+    for (auto &I : *cur_bb) {
+        if (I.getOpcode() == Instruction::Store) {
+            for (auto usr : I.getOperand(1)->users()) {
+                // assert((dyn_cast<Instruction>(usr)->getParent() == cur_bb) && "load store pair should be in the same BB");
+                if (&I != dyn_cast<Instruction>(usr) && dyn_cast<Instruction>(usr)->getParent() == cur_bb)
+                    store_load.emplace_back(&I, dyn_cast<Instruction>(usr));
+            }
+        }
+    }
+    std::deque<Instruction*> bfs;
+    for (auto &sl : store_load) {
+        std::stack<Instruction*> backward;
+        std::set<Value*> meet;
+        Value *right;
+        // add backword instuctions
+        auto cur = dyn_cast<Instruction>(sl.first->getOperand(0));
+        meet.insert(cur);
+
+        while (cur != nullptr) {
+            if (meet.find(cur) != meet.end()) {
+                backward.push(cur);
+                meet.insert(cur->getOperand(0));
+                if (cur->getNumOperands() > 1) {
+                    right = cur->getOperand(1);
+                    if (dyn_cast<Instruction>(right) != nullptr)
+                        meet.insert(right);
+                }
+            }
+            cur = cur->getPrevNode();
+        }
+        errs() << "+++++++++++++++\n";
+        while (!backward.empty()) {
+            errs() << *backward.top() << "\n";
+            ins_list.push_back(backward.top());
+            backward.pop();
+        }
+        errs() << "+++++++++++++++\n";
+
+        sl.second->replaceAllUsesWith(sl.first->getOperand(0));
+        sl.first->eraseFromParent();
+        sl.second->eraseFromParent();
+        dyn_cast<Instruction>(sl.first->getOperand(1))->eraseFromParent();
+//        cur = sl.first;
+//        std::vector<Value*> temp_save;
+//        for (auto *usr : cur->getOperand(1)->users()) {
+//            if (dyn_cast<Instruction>(usr)->getOpcode() == Instruction::Load
+//                && dyn_cast<Instruction>(usr)->getParent() == dyn_cast<Instruction>(cur)->getParent()){
+//                usr->replaceAllUsesWith(*ins_list.rbegin());
+//                temp_save.push_back(usr);
+//            }
+//        }
+//        for (auto *i : temp_save) dyn_cast<Instruction>(i)->eraseFromParent();
+//        cur->eraseFromParent();
+//        dyn_cast<Instruction>(cur->getOperand(1))->eraseFromParent();
+    }
+}
 
 void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<BranchProbabilityInfoWrapperPass>();
