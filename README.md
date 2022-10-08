@@ -8,7 +8,7 @@ First `cd benchmarks` and run all benchmarks `./check.sh`
 
 ## Result
 
-Time used after using performance pass in one execution. To get a correct result, we need to run at least two times.
+Time used after using performance pass in one execution. To get a correct result, we need to run at least two times. The left time is **unoptimized** runtime and the right time is **optimized** runtime.
 
 ```shell
 hw2correct1 PASSED real 0m0.001s => real 0m0.001s
@@ -22,3 +22,23 @@ hw2perf2    PASSED real 0m9.448s => real 0m6.450s
 hw2perf3    PASSED real 0m24.043s => real 0m10.328s
 hw2perf4    PASSED real 0m30.221s => real 0m13.396s
 ```
+
+## Example
+
+Let's use benchmark6 as an example.
+
+### Original CFG
+
+<object data="./benchmarks/correctness/dot/hw2correct6.cfg.pdf" type="application/pdf" width="700px" height="700px">
+    <embed src="./benchmarks/correctness/dot/hw2correct6.cfg.pdf"></embed>
+</object>
+
+<image src="./benchmarks/correctness/dot/hw2correct6.cfg.pdf">
+
+### Optimized CFG
+
+<object data="./benchmarks/correctness/dot/hw2correct6.cfg.pdf" type="application/pdf" width="700px" height="700px">
+    <embed src="./benchmarks/correctness/dot/hw2correct6fplicm.cfg.pdf"></embed>
+</object>
+
+![cfg](benchmarks/correctness/dot/hw2correct6.fplicm.cfg.pdf)
