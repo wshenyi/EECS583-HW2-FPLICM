@@ -29,16 +29,12 @@ Let's use benchmark6 as an example.
 
 ### Original CFG
 
-<object data="./benchmarks/correctness/dot/hw2correct6.cfg.pdf" type="application/pdf" width="700px" height="700px">
-    <embed src="./benchmarks/correctness/dot/hw2correct6.cfg.pdf"></embed>
-</object>
+[file](benchmarks/correctness/dot/hw2correct6.cfg.pdf)  
 
-<image src="./benchmarks/correctness/dot/hw2correct6.cfg.pdf">
+<image src="pic/origin.png" width=700px height=1000px>
 
 ### Optimized CFG
 
-<object data="./benchmarks/correctness/dot/hw2correct6.cfg.pdf" type="application/pdf" width="700px" height="700px">
-    <embed src="./benchmarks/correctness/dot/hw2correct6fplicm.cfg.pdf"></embed>
-</object>
+[file](benchmarks/correctness/dot/hw2correct6.fplicm.cfg.pdf)  
 
-![cfg](benchmarks/correctness/dot/hw2correct6.fplicm.cfg.pdf)
+<image src="pic/opt.png" width=700px height=1000px>
