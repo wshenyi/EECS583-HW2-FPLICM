@@ -2,6 +2,10 @@
 
 Homework2 for EECS 583
 
+## Usage
+
+First `cd benchmarks` and run all benchmarks `./check.sh`
+
 ## Result
 
 Time used after using performance pass in one execution. To get a correct result, we need to run at least two times.
