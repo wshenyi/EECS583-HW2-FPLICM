@@ -265,9 +265,7 @@ struct FPLICMPass : public LoopPass {
         LoopInfo &LoopInfo = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
 
         /* *******Implementation Starts Here******* */
-
         auto BBs = L->getBlocks();
-//        if (!inSubLoop(BBs[0], L, &LoopInfo)) return false;
         BasicBlock *cur = BBs[1];
         std::set<BasicBlock*> fb;
         std::set<BasicBlock*> ifb;
@@ -312,11 +310,6 @@ struct FPLICMPass : public LoopPass {
             }
         }
 
-//        errs() << "++++++++Enter Loop+++++++\n" ;
-//        errs() << "infrequent blocks: " << ifb.size() << "\n";
-//        errs() << "frequent blocks: "  << fb.size() << "\n";
-//        errs() << "Total blocks in loop: " << BBs.size() << "\n";
-//        errs() << "+++++++++Exit Loop+++++++\n" ;
         // If no infrequent path
         if (ifb.empty()) return false;
 
@@ -333,7 +326,8 @@ struct FPLICMPass : public LoopPass {
                 }
                 for (auto *succ : successors(bfs.front())) {
                     if (std::find(bfs.begin(), bfs.end(), succ) == bfs.end()
-                        && fb.find(succ) == fb.end()){
+                        && fb.find(succ) == fb.end()
+                        && !inSubLoop(succ, L, &LoopInfo)){
                         bfs.push_back(succ);
                     }
                 }
@@ -343,6 +337,7 @@ struct FPLICMPass : public LoopPass {
 
         // Check if we need to do FPLICM
         std::map<Value*, Correctness::OperandInfo> info;
+//        std::set<Instruction*> insert_pos;
         for (auto I : infrequent_stores) {
             auto operand = I->getOperand(1);
             for (auto li : frequent_loads) {
@@ -356,6 +351,7 @@ struct FPLICMPass : public LoopPass {
                     }
                     if (!dep) {
                         auto ite = info.find(operand);
+//                        insert_pos.insert(I);
                         if (ite != info.end()) {
                             ite->second.Insert(dyn_cast<LoadInst>(li), dyn_cast<StoreInst>(I));
                         }else{
@@ -370,22 +366,16 @@ struct FPLICMPass : public LoopPass {
         if (info.empty()) return false;
 
         // Analyze FPLICM
+//        errs() << "-----------FPLICM Start!-------------\n";
         for (auto ite : info) {
             FPLICM(L->getLoopPreheader(), ite.second);
         }
+//        errs() << "-----------FPLICM Done!-------------\n";
 
-        // errs() << "------------------------ show all\n";
-        // for (auto &I : *L->getLoopPreheader()) {
-        //     errs() << I << "\n";
-        // }
-        // errs() << "================\n";
-        // for (auto &BB : L->getBlocks()) {
-        //     for (auto &I : *BB) {
-        //         errs() << I << "\n";
-        //     }
-        //     errs() << "================\n";
-        // }
-        // errs() << "------------------------ show finish\n";
+        // Doing constant folding here
+//        errs() << "-------Constant Folding Start!-------\n";
+        ConstantFolding(BBs[1], L->getLoopPreheader());
+//        errs() << "-------Constant Folding Done!-------\n";
         /* *******Implementation Ends Here******* */
 
         return true;
@@ -395,15 +385,14 @@ struct FPLICMPass : public LoopPass {
         Instruction *terminator = PreHeader->getTerminator();
         std::vector<Instruction *> ins_list;
 
-        errs() << "=========FPLICM==========\n";
-        errs() << "Number of load and store\n";
-        errs() << "load: " << info.loads.size() << "\n";
-        errs() << "store: " << info.stores.size() << "\n";
-        errs() << "Hoisted load instructions\n";
-        for (auto &I : info.loads) errs() << *I << "\n";
-        errs() << "=========================\n";
+//        errs() << "=========FPLICM==========\n";
+//        errs() << "Number of load and store\n";
+//        errs() << "load: " << info.loads.size() << "\n";
+//        errs() << "store: " << info.stores.size() << "\n";
+//        errs() << "Hoisted load instructions\n";
+//        for (auto &I : info.loads) errs() << *I << "\n";
+//        errs() << "=========================\n";
 
-        auto body = info.loads[0]->getParent();
         unsigned num = 0;
         for (auto load : info.loads) {
             auto *cur = dyn_cast<Instruction>(*load->user_begin());
@@ -455,9 +444,6 @@ struct FPLICMPass : public LoopPass {
             num = ins_list.size();
         }
 
-        // Doing constant folding here
-        ConstantFolding(body, ins_list);
-
         Value *curr, *prev, *origin;
         for (auto store : info.stores) {
             origin = store->getOperand(0);
@@ -485,64 +471,104 @@ struct FPLICMPass : public LoopPass {
         }
     }
 
-static void ConstantFolding(BasicBlock* cur_bb, std::vector<Instruction*> &ins_list) {
-    for (auto &I : *cur_bb) errs() << I << "\n";
+    static void ConstantFolding(BasicBlock* cur_bb, BasicBlock* PreHeader) {
+        std::vector<Instruction*> loads;
+        std::vector<Instruction*> stores;
+//        std::set<Value*> meet;
+        for (auto &I: *cur_bb) {
+            if (I.getOpcode() == Instruction::Store) stores.push_back(&I);
+        }
+        for (auto store : stores) {
+            for (auto usr : store->getOperand(1)->users()) {
+                auto load = dyn_cast<Instruction>(usr);
+                if (store == load || load->getParent() != cur_bb) continue; // usr may be store itself
+                loads.push_back(load);
+            }
+            if (!loads.empty()) {
+//                auto insert_position = PreHeader->getTerminator()->getPrevNode();
+//                auto cur = dyn_cast<Instruction>(store->getOperand(0));
+//                Value *right;
+//                meet.insert(cur);
+//
+//                while (cur != nullptr) {
+//                    if (meet.find(cur) != meet.end()) {
+////                        backward.push(cur);
+//                        cur->moveAfter(insert_position);
+//                        meet.insert(cur->getOperand(0));
+//                        if (cur->getNumOperands() == 2) {
+//                            right = cur->getOperand(1);
+//                            if (dyn_cast<Instruction>(right) != nullptr)
+//                                meet.insert(right);
+//                        }else if (cur->getNumOperands() == 3){
+//                            right = cur->getOperand(2);
+//                            if (dyn_cast<Instruction>(right) != nullptr)
+//                                meet.insert(right);
+//                        }
+//                    }
+//                    cur = cur->getPrevNode();
+//                }
 
-    std::vector<std::pair<Instruction*,Instruction*>> store_load;
-    for (auto &I : *cur_bb) {
-        if (I.getOpcode() == Instruction::Store) {
-            for (auto usr : I.getOperand(1)->users()) {
-                // assert((dyn_cast<Instruction>(usr)->getParent() == cur_bb) && "load store pair should be in the same BB");
-                if (&I != dyn_cast<Instruction>(usr) && dyn_cast<Instruction>(usr)->getParent() == cur_bb)
-                    store_load.emplace_back(&I, dyn_cast<Instruction>(usr));
+                for (auto li : loads){
+                    li->replaceAllUsesWith(store->getOperand(0));
+                    li->eraseFromParent();
+                }
+                store->eraseFromParent();
+                dyn_cast<Instruction>(store->getOperand(1))->eraseFromParent();
+                loads.clear();
+//                meet.clear();
             }
         }
     }
-    std::deque<Instruction*> bfs;
-    for (auto &sl : store_load) {
-        std::stack<Instruction*> backward;
-        std::set<Value*> meet;
-        Value *right;
-        // add backword instuctions
-        auto cur = dyn_cast<Instruction>(sl.first->getOperand(0));
-        meet.insert(cur);
 
-        while (cur != nullptr) {
-            if (meet.find(cur) != meet.end()) {
-                backward.push(cur);
-                meet.insert(cur->getOperand(0));
-                if (cur->getNumOperands() > 1) {
-                    right = cur->getOperand(1);
-                    if (dyn_cast<Instruction>(right) != nullptr)
-                        meet.insert(right);
+    static void ConstantFolding(BasicBlock* cur_bb, std::vector<Instruction*> &ins_list) {
+
+        std::vector<std::pair<Instruction*,Instruction*>> store_load;
+        for (auto &I : *cur_bb) {
+            if (I.getOpcode() == Instruction::Store) {
+                for (auto usr : I.getOperand(1)->users()) {
+                    // assert((dyn_cast<Instruction>(usr)->getParent() == cur_bb) && "load store pair should be in the same BB");
+                    if (&I != dyn_cast<Instruction>(usr) && dyn_cast<Instruction>(usr)->getParent() == cur_bb)
+                        store_load.emplace_back(&I, dyn_cast<Instruction>(usr));
                 }
             }
-            cur = cur->getPrevNode();
         }
-        errs() << "+++++++++++++++\n";
-        while (!backward.empty()) {
-            errs() << *backward.top() << "\n";
-            ins_list.push_back(backward.top());
-            backward.pop();
-        }
-        errs() << "+++++++++++++++\n";
+        std::deque<Instruction*> bfs;
+        for (auto &sl : store_load) {
+            std::stack<Instruction*> backward;
+            std::set<Value*> meet;
+            Value *right;
+            // add backword instuctions
+            auto cur = dyn_cast<Instruction>(sl.first->getOperand(0));
+            meet.insert(cur);
 
-        sl.second->replaceAllUsesWith(sl.first->getOperand(0));
-        sl.first->eraseFromParent();
-        sl.second->eraseFromParent();
-        dyn_cast<Instruction>(sl.first->getOperand(1))->eraseFromParent();
-//        cur = sl.first;
-//        std::vector<Value*> temp_save;
-//        for (auto *usr : cur->getOperand(1)->users()) {
-//            if (dyn_cast<Instruction>(usr)->getOpcode() == Instruction::Load
-//                && dyn_cast<Instruction>(usr)->getParent() == dyn_cast<Instruction>(cur)->getParent()){
-//                usr->replaceAllUsesWith(*ins_list.rbegin());
-//                temp_save.push_back(usr);
-//            }
-//        }
-//        for (auto *i : temp_save) dyn_cast<Instruction>(i)->eraseFromParent();
-//        cur->eraseFromParent();
-//        dyn_cast<Instruction>(cur->getOperand(1))->eraseFromParent();
+            while (cur != nullptr) {
+                if (meet.find(cur) != meet.end()) {
+                    backward.push(cur);
+                    meet.insert(cur->getOperand(0));
+                    if (cur->getNumOperands() == 2) {
+                        right = cur->getOperand(1);
+                        if (dyn_cast<Instruction>(right) != nullptr)
+                            meet.insert(right);
+                    }else if (cur->getNumOperands() == 3){
+                        right = cur->getOperand(2);
+                        if (dyn_cast<Instruction>(right) != nullptr)
+                            meet.insert(right);
+                    }
+                }
+                cur = cur->getPrevNode();
+            }
+            errs() << "+++++++++++++++\n";
+            while (!backward.empty()) {
+                errs() << *backward.top() << "\n";
+                ins_list.push_back(backward.top());
+                backward.pop();
+            }
+            errs() << "+++++++++++++++\n";
+
+            sl.second->replaceAllUsesWith(sl.first->getOperand(0));
+            sl.first->eraseFromParent();
+            sl.second->eraseFromParent();
+//            dyn_cast<Instruction>(sl.first->getOperand(1))->eraseFromParent();
     }
 }
 
@@ -557,7 +583,7 @@ private:
     /// a subloop of the current one, not the current one itself.
     bool inSubLoop(BasicBlock *BB, Loop *CurLoop, LoopInfo *LI) {
         assert(CurLoop->contains(BB) && "Only valid if BB is IN the loop");
-        return LI->getLoopFor(BB) != CurLoop;
+        return LI->getLoopFor(BB) != CurLoop && BB != LI->getLoopFor(BB)->getHeader();
     }
 
 };

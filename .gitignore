@@ -8,6 +8,4 @@ cmake-build-debug
 default.profraw
 *_output
 *_fplicm
-*.prof.bc
-*.fplicm.bc
-*.ls.bc
+*.bc
